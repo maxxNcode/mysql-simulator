@@ -586,14 +586,39 @@ function usePersistentState(key, initial){
 }
 
 export default function MySQLTerminalSimulator(){
-  const [engine, setEngine] = usePersistentState('mysql-sim-engine', createEmptyEngine());
-  const [output, setOutput] = usePersistentState('mysql-sim-output', []);
+  const [engine, setEngine] = useState(() => {
+    const saved = localStorage.getItem('mysql-engine');
+    return saved ? JSON.parse(saved) : createEmptyEngine();
+  });
+  const [output, setOutput] = useState(() => {
+    const saved = localStorage.getItem('mysql-output');
+    return saved ? JSON.parse(saved) : defaultOutput;
+  });
   const [command, setCommand] = useState('');
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = localStorage.getItem('mysql-font-size');
+    return saved ? parseInt(saved) : 14; // Default to 14px if not saved
+  });
   const outputRef = useRef(null);
   const inputRef = useRef(null);
   const commandContainerRef = useRef(null);
 
-  // Auto-scroll to bottom when output changes
+  // Save engine state to localStorage
+  useEffect(() => {
+    localStorage.setItem('mysql-engine', JSON.stringify(engine));
+  }, [engine]);
+
+  // Save output to localStorage
+  useEffect(() => {
+    localStorage.setItem('mysql-output', JSON.stringify(output));
+  }, [output]);
+
+  // Save font size to localStorage
+  useEffect(() => {
+    localStorage.setItem('mysql-font-size', fontSize.toString());
+  }, [fontSize]);
+
+  // Auto-scroll output to bottom when output or command changes
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -711,6 +736,28 @@ export default function MySQLTerminalSimulator(){
     setCommand('');
   }
 
+  // Function to handle font size change
+  function handleFontSizeChange() {
+    const newSize = prompt('Enter font size (8-32 pixels):', fontSize);
+    if (newSize !== null) {
+      const size = parseInt(newSize);
+      if (!isNaN(size) && size >= 8 && size <= 32) {
+        setFontSize(size);
+        appendOut(`[${now()}] Font size changed to ${size}px.`);
+      } else {
+        alert('Please enter a valid font size between 8 and 32 pixels.');
+      }
+    }
+  }
+
+  // Function to display help with colored mysql> prompt
+  function displayHelp() {
+    const helpLines = helpText().split('\n');
+    let formattedHelp = 'mysql> HELP\n';
+    formattedHelp += helpLines.map(line => line).join('\n');
+    appendOut(formattedHelp);
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-black text-slate-100 p-2 sm:p-4 md:p-6">
       <div className="max-w-5xl mx-auto space-y-3 sm:space-y-4">
@@ -720,7 +767,8 @@ export default function MySQLTerminalSimulator(){
             <h1 className="text-lg sm:text-xl font-semibold">MySQL Web Terminal</h1>
           </div>
           <div className="flex flex-wrap gap-1 sm:gap-2">
-            <ToolbarButton icon={Info} label="Help" onClick={()=> appendOut(`mysql> HELP\n${helpText()}`)} />
+            <ToolbarButton icon={Info} label="Help" onClick={displayHelp} />
+            <ToolbarButton icon={ChevronRight} label="Font Size" onClick={handleFontSizeChange} />
             <ToolbarButton icon={Play} label="Seed Sample" onClick={seedSample} />
             <ToolbarButton icon={Eraser} label="Clear" onClick={()=> setOutput([])} />
             <ToolbarButton icon={Trash2} label="Reset" onClick={resetAll} />
@@ -732,14 +780,24 @@ export default function MySQLTerminalSimulator(){
             <div className="font-mono text-xs text-slate-400 mb-2 hidden sm:block">Type SQL commands directly in the terminal. Commands end with <span className="text-slate-200">;</span> or <span className="text-slate-200">\\G</span></div>
             <div 
               ref={outputRef}
-              className="bg-black rounded-lg sm:rounded-xl p-2 sm:p-3 h-[75vh] overflow-auto border border-white/10 font-mono text-sm"
+              className="bg-black rounded-lg sm:rounded-xl p-2 sm:p-3 h-[75vh] overflow-auto border border-white/10 font-mono"
+              style={{ fontSize: `${fontSize}px` }}
             >
               {output.map((line, i) => (
                 // Preserve whitespace formatting with whitespace-pre-wrap
-                <div key={i} className="whitespace-pre-wrap leading-relaxed">{line}</div>
+                <div key={i} className="whitespace-pre-wrap leading-relaxed">
+                  {line.startsWith('mysql>') ? (
+                    <>
+                      <span className="text-green-500">mysql&gt;</span>
+                      {line.substring(6)}
+                    </>
+                  ) : (
+                    line
+                  )}
+                </div>
               ))}
               <div ref={commandContainerRef} className="flex items-start mt-1 overflow-auto">
-                <span className="mr-1 flex-shrink-0">mysql&gt;</span>
+                <span className="mr-1 flex-shrink-0 text-green-500">mysql&gt;</span>
                 <form onSubmit={handleCommandSubmit} className="flex-1 flex">
                   <textarea
                     ref={inputRef}
@@ -748,6 +806,7 @@ export default function MySQLTerminalSimulator(){
                     onKeyDown={handleKeyDown}
                     className="bg-transparent border-none outline-none flex-1 resize-none overflow-hidden min-h-[30px]"
                     spellCheck={false}
+                    style={{ fontSize: `${fontSize}px` }}
                   />
                 </form>
               </div>
@@ -783,6 +842,7 @@ export default function MySQLTerminalSimulator(){
               <li><code>HELP</code>, <code>STATUS</code>, <code>HISTORY</code></li>
               <li><code>CLEAR</code> or <code>\! cls</code> (clear screen)</li>
               <li>End SELECT with <code>\G</code> for vertical output</li>
+              <li>Use the Font Size button to adjust terminal text size</li>
             </ul>
             <h3 className="font-semibold mt-3 sm:mt-4 text-sm sm:text-base">Examples</h3>
             <div className="text-xs space-y-2 bg-black/30 rounded-lg sm:rounded-xl p-2 sm:p-3 font-mono overflow-x-auto max-h-32 sm:max-h-40">
