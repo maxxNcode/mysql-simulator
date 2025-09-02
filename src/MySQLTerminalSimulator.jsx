@@ -585,6 +585,74 @@ function usePersistentState(key, initial){
   return [val, setVal];
 }
 
+// Function to check if a command is valid and classify its type
+function classifyCommand(command) {
+  if (!command || !command.trim()) return null;
+  
+  const input = command.trim();
+  const start = input.trim();
+  const startUpper = start.toUpperCase();
+
+  // Check for meta commands
+  if (['HELP', '\\H'].includes(startUpper)) return 'meta';
+  if (['EXIT', 'QUIT'].includes(startUpper)) return 'meta';
+  if (startUpper === 'HISTORY') return 'meta';
+  if (['STATUS', '\\S'].includes(startUpper)) return 'meta';
+  if (['CLEAR', '\\! CLS', '\\! CLEAR'].includes(startUpper)) return 'meta';
+  if (startUpper === '\\C') return 'meta';
+
+  // Check for SQL statements
+  const u = input.toUpperCase();
+  if (u.startsWith('CREATE DATABASE ') || u.startsWith('DROP DATABASE ')) return 'database';
+  if (u === 'SHOW DATABASES') return 'database';
+  if (u.startsWith('USE ')) return 'database';
+  if (u.startsWith('CREATE TABLE ') || u.startsWith('DROP TABLE ')) return 'table';
+  if (u === 'SHOW TABLES') return 'table';
+  if (u.startsWith('DESCRIBE ') || u.startsWith('DESC ')) return 'table';
+  if (u.startsWith('INSERT INTO ')) return 'data';
+  if (u.startsWith('SELECT ')) return 'data';
+  if (u.startsWith('UPDATE ')) return 'data';
+  if (u.startsWith('DELETE FROM ')) return 'data';
+
+  return null;
+}
+
+// Component to render highlighted text
+function HighlightedText({ text }) {
+  if (!text) return text;
+
+  // If it's the mysql prompt line, highlight it
+  if (text.startsWith('mysql>')) {
+    const command = text.substring(6).trim();
+    const commandType = classifyCommand(command);
+    
+    // Apply different colors based on command type
+    let colorClass = "text-white"; // default color
+    if (commandType === 'meta') colorClass = "text-yellow-400";
+    else if (commandType === 'database') colorClass = "text-purple-400";
+    else if (commandType === 'table') colorClass = "text-pink-400";
+    else if (commandType === 'data') colorClass = "text-blue-400";
+    
+    if (commandType) {
+      return (
+        <>
+          <span className="text-green-500">mysql&gt;</span>
+          <span className={colorClass}>{text.substring(6)}</span>
+        </>
+      );
+    } else {
+      return (
+        <>
+          <span className="text-green-500">mysql&gt;</span>
+          {text.substring(6)}
+        </>
+      );
+    }
+  }
+
+  return text;
+}
+
 export default function MySQLTerminalSimulator(){
   const [engine, setEngine] = useState(() => {
     const saved = localStorage.getItem('mysql-engine');
@@ -758,6 +826,16 @@ export default function MySQLTerminalSimulator(){
     appendOut(formattedHelp);
   }
 
+  // Get the appropriate color class for the command input
+  const getInputColorClass = () => {
+    const commandType = classifyCommand(command);
+    if (commandType === 'meta') return "text-yellow-400";
+    if (commandType === 'database') return "text-purple-400";
+    if (commandType === 'table') return "text-pink-400";
+    if (commandType === 'data') return "text-blue-400";
+    return "text-white";
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-black text-slate-100 p-2 sm:p-4 md:p-6">
       <div className="max-w-5xl mx-auto space-y-3 sm:space-y-4">
@@ -787,10 +865,7 @@ export default function MySQLTerminalSimulator(){
                 // Preserve whitespace formatting with whitespace-pre-wrap
                 <div key={i} className="whitespace-pre-wrap leading-relaxed">
                   {line.startsWith('mysql>') ? (
-                    <>
-                      <span className="text-green-500">mysql&gt;</span>
-                      {line.substring(6)}
-                    </>
+                    <HighlightedText text={line} />
                   ) : (
                     line
                   )}
@@ -804,7 +879,7 @@ export default function MySQLTerminalSimulator(){
                     value={command}
                     onChange={(e) => setCommand(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="bg-transparent border-none outline-none flex-1 resize-none overflow-hidden min-h-[30px]"
+                    className={`bg-transparent border-none outline-none flex-1 resize-none overflow-hidden min-h-[30px] ${getInputColorClass()}`}
                     spellCheck={false}
                     style={{ fontSize: `${fontSize}px` }}
                   />
