@@ -592,7 +592,7 @@ export default function MySQLTerminalSimulator(){
   });
   const [output, setOutput] = useState(() => {
     const saved = localStorage.getItem('mysql-output');
-    return saved ? JSON.parse(saved) : defaultOutput;
+    return saved ? JSON.parse(saved) : [`Welcome to the MySQL Web Terminal Simulator!`, `Type HELP or \\h for help.`, `mysql>`];
   });
   const [command, setCommand] = useState('');
   const [fontSize, setFontSize] = useState(() => {
