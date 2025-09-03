@@ -114,6 +114,8 @@ function createEmptyEngine(){
 
 // ---------------------- Evaluation ----------------------
 function evaluate(engine, rawInput) {
+  // Store the original input for display purposes
+  const originalInput = rawInput;
   const input = rawInput.trim();
   if (!input) return { out: null };
 
@@ -291,9 +293,20 @@ function dropDatabase(engine, stmt){
 
 function showDatabases(engine){
   const names = Object.keys(engine.databases);
-  const header = '+--------------------+\n| Database           |\n+--------------------+';
-  const rows = names.map(n=>`| ${n.padEnd(18)} |`).join('\n');
-  return { out: `${header}\n${rows || '| (none)            |'}\n+--------------------+\n${names.length} row(s) in set` };
+  // Calculate the maximum width needed for the content
+  const maxNameLength = Math.max(
+    ...names.map(n => n.length),
+    'Database'.length,  // header length
+    '(none)'.length     // default value length
+  );
+  
+  const header = '+' + '-'.repeat(maxNameLength + 2) + '+\n' + 
+                '|' + ' Database'.padEnd(maxNameLength + 2) + '|\n' +
+                '+' + '-'.repeat(maxNameLength + 2) + '+';
+  
+  const rows = names.map(n => `| ${n.padEnd(maxNameLength)} |`).join('\n');
+  
+  return { out: `${header}\n${rows || `| ${(names.length === 0 ? '(none)' : '').padEnd(maxNameLength)} |`}\n+${'-'.repeat(maxNameLength + 2)}+\n${names.length} row(s) in set` };
 }
 
 function useDatabase(engine, stmt){
@@ -350,9 +363,22 @@ function showTables(engine){
   const ok = ensureDB(engine); if (ok.err) return { out: ok.err };
   const db = engine.databases[engine.currentDB];
   const names = Object.keys(db.tables);
-  const header = '+--------------------+\n| Tables_in_' + engine.currentDB.padEnd(10) + '|\n+--------------------+';
-  const rows = names.map(n=>`| ${n.padEnd(18)} |`).join('\n');
-  return { out: `${header}\n${rows || '| (none)            |'}\n+--------------------+\n${names.length} row(s) in set` };
+  
+  // Calculate the maximum width needed for the content
+  const headerText = `Tables_in_${engine.currentDB}`;
+  const maxNameLength = Math.max(
+    ...names.map(n => n.length),
+    headerText.length,   // header length
+    '(none)'.length      // default value length
+  );
+  
+  const header = '+' + '-'.repeat(maxNameLength + 2) + '+\n' + 
+                '|' + ` ${headerText}`.padEnd(maxNameLength + 2) + '|\n' +
+                '+' + '-'.repeat(maxNameLength + 2) + '+';
+  
+  const rows = names.map(n => `| ${n.padEnd(maxNameLength)} |`).join('\n');
+  
+  return { out: `${header}\n${rows || `| ${(names.length === 0 ? '(none)' : '').padEnd(maxNameLength)} |`}\n+${'-'.repeat(maxNameLength + 2)}+\n${names.length} row(s) in set` };
 }
 
 function describeTable(engine, stmt){
@@ -363,14 +389,44 @@ function describeTable(engine, stmt){
   const db = engine.databases[engine.currentDB];
   const table = db.tables[t];
   if (!table) return { out: `ERROR: Unknown table '${t}'.` };
-  const header = '+-----------+--------------+------+-----+---------+----------------+\n| Field     | Type         | Null | Key | Default | Extra          |\n+-----------+--------------+------+-----+---------+----------------+';
-  const rows = table.columns.map(c=>{
+  
+  // Calculate optimal column widths
+  const columns = table.columns;
+  const fieldWidth = Math.max(
+    ...columns.map(c => c.name.length),
+    'Field'.length
+  );
+  
+  const typeWidth = Math.max(
+    ...columns.map(c => String(c.type).length),
+    'Type'.length
+  );
+  
+  const nullWidth = Math.max('Null'.length, 'NO'.length);
+  const keyWidth = Math.max('Key'.length, ...columns.map(c => c.pk ? 'PRI' : '').map(s => s.length));
+  const defaultWidth = Math.max('Default'.length, 'NULL'.length);
+  const extraWidth = Math.max('Extra'.length, ...columns.map(c => c.auto ? 'auto_increment' : '').map(s => s.length));
+  
+  // Create header
+  const separator = '+' + '-'.repeat(fieldWidth + 2) + '+' + '-'.repeat(typeWidth + 2) + '+' + 
+                   '-'.repeat(nullWidth + 2) + '+' + '-'.repeat(keyWidth + 2) + '+' + 
+                   '-'.repeat(defaultWidth + 2) + '+' + '-'.repeat(extraWidth + 2) + '+';
+  
+  const headerNames = '|' + ` Field`.padEnd(fieldWidth + 2) + '|' + 
+                     ` Type`.padEnd(typeWidth + 2) + '|' + 
+                     ` Null`.padEnd(nullWidth + 2) + '|' + 
+                     ` Key`.padEnd(keyWidth + 2) + '|' + 
+                     ` Default`.padEnd(defaultWidth + 2) + '|' + 
+                     ` Extra`.padEnd(extraWidth + 2) + '|';
+  
+  // Create rows
+  const rows = columns.map(c => {
     const key = c.pk ? 'PRI' : '';
     const extra = c.auto ? 'auto_increment' : '';
-    const line = `| ${c.name.padEnd(9)} | ${String(c.type).padEnd(12)} | NO   | ${key.padEnd(3)} | NULL    | ${extra.padEnd(14)} |`;
-    return line;
+    return `| ${c.name.padEnd(fieldWidth)} | ${String(c.type).padEnd(typeWidth)} | NO   | ${key.padEnd(keyWidth)} | NULL    | ${extra.padEnd(extraWidth)} |`;
   }).join('\n');
-  return { out: `${header}\n${rows}\n+-----------+--------------+------+-----+---------+----------------+\n${table.columns.length} row(s) in set` };
+  
+  return { out: `${separator}\n${headerNames}\n${separator}\n${rows}\n${separator}\n${table.columns.length} row(s) in set` };
 }
 
 function parseValuesList(valsStr){
@@ -667,6 +723,13 @@ export default function MySQLTerminalSimulator(){
     const saved = localStorage.getItem('mysql-font-size');
     return saved ? parseInt(saved) : 14; // Default to 14px if not saved
   });
+  // Add state for command history navigation
+  const [commandHistory, setCommandHistory] = useState(() => {
+    const saved = localStorage.getItem('mysql-command-history');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  
   const outputRef = useRef(null);
   const inputRef = useRef(null);
   const commandContainerRef = useRef(null);
@@ -685,6 +748,11 @@ export default function MySQLTerminalSimulator(){
   useEffect(() => {
     localStorage.setItem('mysql-font-size', fontSize.toString());
   }, [fontSize]);
+
+  // Save command history to localStorage
+  useEffect(() => {
+    localStorage.setItem('mysql-command-history', JSON.stringify(commandHistory));
+  }, [commandHistory]);
 
   // Auto-scroll output to bottom when output or command changes
   useEffect(() => {
@@ -721,12 +789,24 @@ export default function MySQLTerminalSimulator(){
 
   function runStatement(stmt){
     const e = clone(engine);
-    const res = evaluate(e, stmt);
-    e.history.push(stmt);
+    // Use the trimmed version for evaluation but keep original for display
+    const trimmedStmt = stmt.trim();
+    const res = evaluate(e, trimmedStmt);
+    e.history.push(trimmedStmt);
     setEngine(e);
+    
+    // Add command to history if it's not empty and not already in history
+    if (stmt.trim() && !commandHistory.includes(stmt)) {
+      setCommandHistory(prev => [...prev, stmt]);
+    }
+    
+    // Reset history index when executing a command
+    setHistoryIndex(-1);
+    
     if (res.clearScreen) setOutput([]);
     if (res.out) {
       // Preserve formatting for the command and output
+      // We need to preserve the original whitespace formatting
       appendOut(`mysql> ${stmt}\n${res.out}`);
     } else {
       appendOut(`mysql> ${stmt}`);
@@ -738,7 +818,8 @@ export default function MySQLTerminalSimulator(){
     e.preventDefault();
     if (!command.trim()) return;
     
-    const cmd = command.trim();
+    // Don't trim the command to preserve indentation
+    const cmd = command;
     setCommand('');
     
     // Process the command
@@ -759,6 +840,50 @@ export default function MySQLTerminalSimulator(){
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
       e.preventDefault();
       setOutput([]);
+    }
+    
+    // Handle command history navigation with up/down arrows
+    if (commandHistory.length > 0) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        // If we're at the start or currently typing a new command, go to the most recent history item
+        if (historyIndex === -1 || historyIndex >= commandHistory.length - 1) {
+          // Save current command if it's not empty and not already in history
+          if (command && command.trim() && !commandHistory.includes(command)) {
+            setCommandHistory(prev => [...prev, command]);
+          }
+          // Set to the most recent command
+          setHistoryIndex(commandHistory.length - 1);
+          setCommand(commandHistory[commandHistory.length - 1]);
+        } else {
+          // Move to the previous (older) command in history
+          const newIndex = historyIndex + 1;
+          setHistoryIndex(newIndex);
+          setCommand(commandHistory[commandHistory.length - 1 - newIndex]);
+        }
+        return;
+      }
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIndex === -1) {
+          // Already at the bottom, do nothing
+          return;
+        } else if (historyIndex === 0) {
+          // Going back to the current command being typed
+          setHistoryIndex(-1);
+          // Restore the command that was being typed before navigating history
+          // For simplicity, we'll just clear it. A more advanced implementation
+          // would save the current partial command
+          setCommand('');
+        } else {
+          // Move to the next (newer) command in history
+          const newIndex = historyIndex - 1;
+          setHistoryIndex(newIndex);
+          setCommand(commandHistory[commandHistory.length - 1 - newIndex]);
+        }
+        return;
+      }
     }
     
     // Handle Shift+Enter for new line (default behavior in textarea)
@@ -896,6 +1021,40 @@ export default function MySQLTerminalSimulator(){
                 className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-sm font-medium"
               >
                 Execute
+              </button>
+            </div>
+            {/* Android/mobile command history navigation controls */}
+            <div className="mt-2 flex justify-between sm:hidden">
+              <button
+                onClick={() => {
+                  if (commandHistory.length > 0 && historyIndex < commandHistory.length - 1) {
+                    const newIndex = historyIndex + 1;
+                    setHistoryIndex(newIndex);
+                    setCommand(commandHistory[commandHistory.length - 1 - newIndex]);
+                  }
+                }}
+                disabled={commandHistory.length === 0 || historyIndex >= commandHistory.length - 1}
+                className="px-3 py-1 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:opacity-50 rounded text-sm font-medium"
+              >
+                ↑ Prev
+              </button>
+              <button
+                onClick={() => {
+                  if (historyIndex >= 0) {
+                    if (historyIndex === 0) {
+                      setHistoryIndex(-1);
+                      setCommand('');
+                    } else {
+                      const newIndex = historyIndex - 1;
+                      setHistoryIndex(newIndex);
+                      setCommand(commandHistory[commandHistory.length - 1 - newIndex]);
+                    }
+                  }
+                }}
+                disabled={historyIndex === -1}
+                className="px-3 py-1 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:opacity-50 rounded text-sm font-medium"
+              >
+                ↓ Next
               </button>
             </div>
             <div className="mt-2 sm:mt-3 font-mono text-xs text-slate-400 sm:hidden">
